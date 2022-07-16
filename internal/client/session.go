@@ -17,20 +17,22 @@ import (
 )
 
 type TunnelClientSession struct {
-	id        request.SessionID
-	client    *Client
-	connAddr  *net.UDPAddr
-	writeFeed chan []byte
-	fragId    uint16     // TODO: use a pool instead of a counter
-	idLock    sync.Mutex // doing some logic to reset it, so atomic operations aren't enough :()
+	id            request.SessionID
+	client        *Client
+	connAddr      *net.UDPAddr
+	writeFeed     chan []byte
+	fragId        uint16     // TODO: use a pool instead of a counter
+	idLock        sync.Mutex // doing some logic to reset it, so atomic operations aren't enough :()
+	readFragTable fragmentation.FragmentationTable
 }
 
 func newSession(client *Client, conAddr *net.UDPAddr) *TunnelClientSession {
 	return &TunnelClientSession{
-		client:    client,
-		connAddr:  conAddr,
-		writeFeed: make(chan []byte),
-		fragId:    0,
+		client:        client,
+		connAddr:      conAddr,
+		writeFeed:     make(chan []byte),
+		fragId:        0,
+		readFragTable: fragmentation.NewFragTable(),
 	}
 }
 
@@ -90,7 +92,9 @@ func (sess *TunnelClientSession) writeRoutine() {
 
 func (sess *TunnelClientSession) readRoutine() {
 	sleep := func() {
-		time.Sleep(4000 * time.Millisecond)
+		fmt.Printf("Poll sleepz zzzz")
+		time.Sleep(500 * time.Millisecond)
+		fmt.Printf("poll wake")
 	}
 
 	for {
@@ -107,26 +111,42 @@ func (sess *TunnelClientSession) readRoutine() {
 
 		responseBytes, err := request.DecodeResponse(encodedResponse)
 
-		if len(responseBytes) <= 1 {
-			sleep()
-			continue
-		}
-
-		// todo switch on header byte
-		_ = responseBytes[0]
-		data := responseBytes[1:]
-
 		if err != nil {
 			log.Printf("Couldn't decode response %s: %v", encodedResponse, err)
 			sleep()
 			continue
 		}
 
-		_, err = sess.client.conn.WriteToUDP(data, sess.connAddr)
+		response, err := request.UnmarshalPollResponse(responseBytes)
 
 		if err != nil {
-			// todo: die
-			log.Printf("had writing error (i should probably die now?)")
+			log.Printf("Couldn't unmarshal poll resonse %s: %v", responseBytes, err)
+			sleep()
+			continue
+		}
+
+		switch response.Status {
+		case request.POLL_NO_DATA:
+			log.Printf("Empty poll")
+			sleep()
+			continue
+		case request.POLL_OK:
+			log.Printf("Feeding fragment: %v", response)
+
+			completePacket, err := sess.readFragTable.FeedFragment(response.FragmentationHeader, response.Data)
+
+			if err != nil {
+				log.Printf("Error feeding fragment (continuing): %v", err)
+				continue
+			}
+
+			if completePacket != nil {
+				_, err = sess.client.conn.WriteToUDP(completePacket, sess.connAddr)
+				if err != nil {
+					// todo: die
+					log.Printf("had writing error (i should probably die now?)")
+				}
+			}
 		}
 	}
 }

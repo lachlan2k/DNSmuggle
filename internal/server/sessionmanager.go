@@ -96,8 +96,6 @@ func (mgr *SessionManager) handleControlMessage(msg []byte) (response []byte, er
 	headerByte := msg[0]
 	data := msg[1:]
 
-	log.Printf("%d and %s", headerByte, data)
-
 	switch headerByte {
 	case request.CTRL_HEADER_SESSION_OPEN:
 		response, err = mgr.handleOpen(data)

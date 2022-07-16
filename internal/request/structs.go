@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 )
 
@@ -19,10 +20,8 @@ const (
 )
 
 const (
-	RES_HEADER_WRITE_OK   = iota
-	RES_HEADER_POLL_OK    = iota
-	RES_HEADER_CLOSED     = iota
-	RES_HEADER_DIAL_ERROR = iota
+	RES_HEADER_WRITE_OK = iota
+	RES_HEADER_CLOSED   = iota
 )
 
 type SessionID = uint64
@@ -130,6 +129,41 @@ func (s FragmentationHeader) Marshal() uint16 {
 	return index<<5 | id<<9 | final
 }
 
+// Response to polling data
+type PollResponse struct {
+	Status              uint8
+	FragmentationHeader FragmentationHeader
+	Data                []byte
+}
+
+const (
+	POLL_OK      = iota
+	POLL_NO_DATA = iota
+	POLL_ERROR   = iota
+)
+
+func UnmarshalPollResponse(msg []byte) (req PollResponse, err error) {
+	if len(msg) < 3 {
+		err = fmt.Errorf("poll response too small (%d)/3", len(msg))
+		return
+	}
+
+	req = PollResponse{
+		Status:              msg[0],
+		FragmentationHeader: UnmarshalFragmentationHeader(binary.BigEndian.Uint16(msg[1:3])),
+		Data:                msg[3:],
+	}
+	return
+}
+
+func (r PollResponse) Marshal() []byte {
+	buff := make([]byte, 1+2+len(r.Data))
+	buff[0] = r.Status
+	binary.BigEndian.PutUint16(buff[1:3], r.FragmentationHeader.Marshal())
+	copy(buff[3:], r.Data)
+	return buff
+}
+
 // Request to write data
 type WriteRequest struct {
 	ID                  SessionID
@@ -139,11 +173,9 @@ type WriteRequest struct {
 
 func UnmarshalWriteRequest(msg []byte) (req WriteRequest, err error) {
 	if len(msg) < 10 {
-		err = errors.New("session write request too small")
+		err = errors.New("writte request too small")
 		return
 	}
-
-	// log.Printf("Unarshalling id %d as %s", binary.BigEndian.Uint64(msg[:8]), hex.EncodeToString(msg))
 
 	req = WriteRequest{
 		ID:                  binary.BigEndian.Uint64(msg[:8]),

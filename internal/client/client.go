@@ -56,7 +56,7 @@ func (c *Client) Run() error {
 		}
 
 		data := buff[:n]
-		log.Printf("Read %s (%d bytes) from %v", data, n, addr)
+		// log.Printf("Read %s (%d bytes) from %v", data, n, addr)
 
 		go (func() {
 			sess := table.UpsertSession(addr)
