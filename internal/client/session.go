@@ -1,12 +1,12 @@
 package client
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
 	"time"
 
-	"capnproto.org/go/capnp/v3"
 	"github.com/lachlan2k/dns-tunnel/internal/request"
 	"github.com/miekg/dns"
 )
@@ -38,8 +38,8 @@ func (sess *TunnelClientSession) writeRoutine() {
 
 		log.Printf("Writing datagram %s", datagram)
 
-		msg := request.MarshalMessage(request.REQ_HEADER_SESSION_WRITE, request.SessionWriteRequest{
-			ID:   sess.id,
+		msg := request.MarshalMessageWithHeader(request.REQ_HEADER_SESSION_WRITE, request.WriteRequest{
+			Id:   sess.id,
 			Data: datagram,
 		})
 
@@ -90,13 +90,8 @@ func (sess *TunnelClientSession) readRoutine() {
 	}
 }
 
-func (sess *TunnelClientSession) sendControlChannelMessage(msg *capnp.Message) (response string, err error) {
-	packed, err := msg.MarshalPacked()
-	if err != nil {
-		return
-	}
-
-	encryptedMsg, err := request.EncryptMessage(packed, sess.client.config.PSK)
+func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response string, err error) {
+	encryptedMsg, err := request.EncryptMessage(msg, sess.client.config.PSK)
 
 	if err != nil {
 		return
@@ -161,12 +156,17 @@ func (sess *TunnelClientSession) initialise() (err error) {
 
 	// todo: responseBytes[0] check if dial error or okay
 
-	response, err := request.UnmarshalMessage[request.SessionOpenResponse](responseBytes[1:])
+	log.Printf("Hello our response bytes do be %s", hex.EncodeToString(responseBytes))
+
+	// var boi request.SessionOpenRequest
+	// proto.
+
+	response, err := request.UnmarshalMessage[request.SessionOpenResponse](responseBytes)
 	if err != nil {
 		return
 	}
 
-	sess.id = response.ID
+	sess.id = response.GetId()
 	log.Printf("Session initialized with ID %d", sess.id)
 
 	return

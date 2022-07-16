@@ -23,12 +23,12 @@ func (mgr *SessionManager) storeSession(sess *Session) {
 func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 	log.Printf("Received new session request\n")
 
-	req, err := request.UnmarshalMessage(msg, request.ReadRootSessionOpenRequest)
+	req, err := request.UnmarshalMessage[request.SessionOpenRequest](msg)
 	if err != nil {
 		return
 	}
 
-	dialAddr, err := net.ResolveUDPAddr("udp", req.DestAddr)
+	dialAddr, err := net.ResolveUDPAddr("udp", req.GetDestAddr())
 	if err != nil {
 		return
 	}
@@ -53,12 +53,12 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 }
 
 func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.SessionPollRequest](msg)
+	req, err := request.UnmarshalMessage[request.PollRequest](msg)
 	if err != nil {
 		return
 	}
 
-	sess, ok := mgr.getSession(req.ID)
+	sess, ok := mgr.getSession(req.GetId())
 
 	if !ok {
 		response = []byte{request.RES_HEADER_CLOSED}
@@ -70,27 +70,21 @@ func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
 }
 
 func (mgr *SessionManager) handleWrite(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.SessionWriteRequest](msg)
+	req, err := request.UnmarshalMessage[request.WriteRequest](msg)
 	if err != nil {
 		return
 	}
 
-	log.Printf("Write request received for %d\n", req.ID)
+	log.Printf("Write request received for %d\n", req.GetId())
 
-	sess, ok := mgr.getSession(req.ID)
+	sess, ok := mgr.getSession(req.GetId())
 
 	if !ok {
 		response = []byte{request.RES_HEADER_CLOSED}
 		return
 	}
 
-	data, err := req.Data()
-
-	if err != nil {
-		return
-	}
-
-	response = sess.Write(data)
+	response = sess.Write(req.Data)
 	return
 }
 
