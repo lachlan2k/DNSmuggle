@@ -1,0 +1,48 @@
+syntax = "proto3";
+option go_package = "../request/";
+
+message SessionOpenRequest {
+    string destAddr = 1;
+}
+
+message SessionOpenResponse {
+    enum Status {
+        OK = 0;
+        DIAL_FAIL = 1;
+        ERROR = 2;
+    }
+    
+    Status status = 1;
+    uint64 id = 2;
+}
+
+message PollRequest {
+    uint64 id = 1;
+}
+
+message PollResponse {
+    enum Status {
+        POLL_OK = 0;
+        NO_DATA = 1;
+        CLOSED = 2;
+        ERROR = 3;
+    }
+
+    Status status = 1;
+    bytes data = 2;
+}
+
+message WriteRequest {
+    uint64 id = 1;
+	bytes data = 2;
+}
+
+message WriteResponse {
+    enum Status {
+        WRITE_OK = 0;
+        CLOSED = 1;
+        ERROR = 2;
+    }
+
+    Status status = 1;
+}

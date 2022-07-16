@@ -58,7 +58,13 @@ func (c *Client) Run() error {
 		log.Printf("Read %s (%d bytes) from %v", data, n, addr)
 
 		go (func() {
-			sess := table.UpsertSession(addr)
+			sess, err := table.UpsertSession(addr)
+
+			if err != nil {
+				log.Printf("Error opening/upserting session: %v", err)
+				return
+			}
+
 			sess.Write(data)
 		})()
 	}

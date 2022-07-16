@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"log"
 	"net"
 
@@ -28,7 +29,7 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 		return
 	}
 
-	dialAddr, err := net.ResolveUDPAddr("udp", req.DestAddr)
+	dialAddr, err := net.ResolveUDPAddr("udp", req.GetDestAddr())
 	if err != nil {
 		return
 	}
@@ -39,29 +40,36 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 	if err != nil {
 		log.Printf("Unable to dial %s: %v", req.DestAddr, err)
 		err = nil
-		response = request.MarshalMessage(request.RES_HEADER_DIAL_ERROR, nil)
+		response = request.MarshalMessage(request.SessionOpenResponse{
+			Status: request.SessionOpenResponse_DIAL_FAIL,
+		})
 		return
 	}
 
 	mgr.storeSession(sess)
 
-	response = request.MarshalMessage(request.RES_HEADER_POLL_OK, request.SessionOpenResponse{
-		ID: sess.id,
+	response = request.MarshalMessage(request.SessionOpenResponse{
+		Id:     sess.id,
+		Status: request.SessionOpenResponse_OK,
 	})
+
+	log.Printf("Marshalled session open resouse: %s", hex.EncodeToString(response))
 
 	return
 }
 
 func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.SessionPollRequest](msg)
+	req, err := request.UnmarshalMessage[request.PollRequest](msg)
 	if err != nil {
 		return
 	}
 
-	sess, ok := mgr.getSession(req.ID)
+	sess, ok := mgr.getSession(req.GetId())
 
 	if !ok {
-		response = []byte{request.RES_HEADER_CLOSED}
+		response = request.MarshalMessage(request.PollResponse{
+			Status: request.PollResponse_CLOSED,
+		})
 		return
 	}
 
@@ -70,17 +78,19 @@ func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
 }
 
 func (mgr *SessionManager) handleWrite(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.SessionWriteRequest](msg)
+	req, err := request.UnmarshalMessage[request.WriteRequest](msg)
 	if err != nil {
 		return
 	}
 
-	log.Printf("Write request received for %d\n", req.ID)
+	log.Printf("Write request received for %d\n", req.GetId())
 
-	sess, ok := mgr.getSession(req.ID)
+	sess, ok := mgr.getSession(req.GetId())
 
 	if !ok {
-		response = []byte{request.RES_HEADER_CLOSED}
+		response = request.MarshalMessage(request.WriteResponse{
+			Status: request.WriteResponse_CLOSED,
+		})
 		return
 	}
 

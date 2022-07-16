@@ -20,7 +20,7 @@ func (mgr *NATManager) janitor() {
 	// todo: clean up expired sessions
 }
 
-func (mgr *NATManager) UpsertSession(addr *net.UDPAddr) (sess *TunnelClientSession) {
+func (mgr *NATManager) UpsertSession(addr *net.UDPAddr) (sess *TunnelClientSession, err error) {
 	key := addr.String()
 	entry, ok := mgr.table.Load(key)
 
@@ -30,9 +30,13 @@ func (mgr *NATManager) UpsertSession(addr *net.UDPAddr) (sess *TunnelClientSessi
 			sess:     sess,
 			lastTime: time.Now(),
 		})
-		sess.Open()
-		return sess
+		err = sess.Open()
+		if err != nil {
+			return nil, err
+		}
+
+		return sess, nil
 	} else {
-		return entry.(*TableEntry).sess
+		return entry.(*TableEntry).sess, nil
 	}
 }
