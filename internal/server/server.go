@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -32,8 +33,6 @@ func NewFromConfig(config Config) Server {
 }
 
 func (s *Server) handleQuery(m *dns.Msg) {
-	ctrlName := strings.ToUpper(request.GetCtrlFQDN(s.config.TunnelDomain))
-
 	for _, q := range m.Question {
 		switch q.Qtype {
 		case dns.TypeNS:
@@ -41,28 +40,30 @@ func (s *Server) handleQuery(m *dns.Msg) {
 			m.Answer = append(m.Answer, rr)
 
 		case dns.TypeTXT:
-			// Every request in the control "channel" is encrypted
-			// i'm lazy, so writing goes over the control channel right now
-			// but it shouldn't
 			upperName := strings.ToUpper(q.Name)
-			if strings.HasSuffix(upperName, ctrlName) {
-				msg := strings.TrimSuffix(upperName, ctrlName)
-				log.Printf("Control query (%d chars) %s\n", len(upperName), msg)
+			msg := strings.TrimSuffix(upperName, strings.ToUpper(s.config.TunnelDomain))
 
-				msgBytes, err := request.DecodeRequest(msg)
+			msgBytes, err := request.DecodeRequest(msg)
 
-				if err == nil && len(msgBytes) == 0 {
-					err = errors.New("0 length message received")
-				}
+			if err == nil && len(msgBytes) == 0 {
+				err = errors.New("0 length message received")
+			}
 
-				if err != nil {
-					log.Printf("Decoding error for %s: %v", msg, err)
-					rr, _ := dns.NewRR(fmt.Sprintf("%s TXT no", q.Name))
-					m.Answer = append(m.Answer, rr)
-					continue
-				}
+			if err != nil {
+				log.Printf("Decoding error for %s: %v", msg, err)
+				rr, _ := dns.NewRR(fmt.Sprintf("%s TXT no", q.Name))
+				m.Answer = append(m.Answer, rr)
+				continue
+			}
 
-				decryptedMessage, err := request.DecryptMessage(msgBytes, s.config.PSK)
+			msgHeader := msgBytes[0]
+			msgBody := msgBytes[1:]
+
+			var responseBytes []byte
+
+			switch msgHeader {
+			case request.REQ_HEADER_CTRL:
+				msgBody, err = request.DecryptMessage(msgBody, s.config.PSK)
 
 				if err != nil {
 					log.Printf("Decryption error for %s: %v", msg, err)
@@ -71,23 +72,22 @@ func (s *Server) handleQuery(m *dns.Msg) {
 					continue
 				}
 
-				log.Printf("decrypted message: (%d bytes) %d and %s", len(decryptedMessage), decryptedMessage[0], decryptedMessage[1:])
-
-				responseBytes, err := s.manager.handleMessage(decryptedMessage)
-
-				if err != nil {
-					log.Printf("Handling error for %s: %v", msg, err)
-					rr, _ := dns.NewRR(fmt.Sprintf("%s TXT sad", q.Name))
-					m.Answer = append(m.Answer, rr)
-					continue
-				}
-
-				encodedResponse := request.EncodeResponse(responseBytes)
-				rr, _ := dns.NewRR(fmt.Sprintf("%s TXT %s", q.Name, encodedResponse))
-				m.Answer = append(m.Answer, rr)
-			} else {
-				log.Printf("Hmmm, I got a query for %s?\n", q.Name)
+				responseBytes, err = s.manager.handleControlMessage(msgBody)
+			case request.REQ_HEADER_DATA:
+				log.Printf("Handling data message %s as %s as %s", msg, hex.EncodeToString(msgBytes), msgBody)
+				responseBytes, err = s.manager.handleDataMessage(msgBody)
 			}
+
+			if err != nil {
+				log.Printf("Handling error for %s: %v", msg, err)
+				rr, _ := dns.NewRR(fmt.Sprintf("%s TXT sad", q.Name))
+				m.Answer = append(m.Answer, rr)
+				continue
+			}
+
+			encodedResponse := request.EncodeResponse(responseBytes)
+			rr, _ := dns.NewRR(fmt.Sprintf("%s TXT %s", q.Name, encodedResponse))
+			m.Answer = append(m.Answer, rr)
 
 			fmt.Printf("ans: %s\n", m.Answer)
 		}
@@ -108,6 +108,7 @@ func (s *Server) handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func (s *Server) Run() (err error) {
+	s.config.TunnelDomain = dns.Fqdn(s.config.TunnelDomain)
 	dns.HandleFunc(s.config.TunnelDomain, s.handleDnsRequest)
 	dnsServer := &dns.Server{Addr: s.config.ListenAddr, Net: "udp"}
 

@@ -92,22 +92,25 @@ func (mgr *SessionManager) handleWrite(msg []byte) (response []byte, err error) 
 	return
 }
 
-func (mgr *SessionManager) handleMessage(msg []byte) (response []byte, err error) {
+func (mgr *SessionManager) handleControlMessage(msg []byte) (response []byte, err error) {
 	headerByte := msg[0]
 	data := msg[1:]
 
 	log.Printf("%d and %s", headerByte, data)
 
 	switch headerByte {
-	case request.REQ_HEADER_SESSION_OPEN:
+	case request.CTRL_HEADER_SESSION_OPEN:
 		response, err = mgr.handleOpen(data)
-	case request.REQ_HEADER_SESSION_POLL:
+	case request.CTRL_HEADER_SESSION_POLL:
 		response, err = mgr.handlePoll(data)
-	case request.REQ_HEADER_SESSION_WRITE:
-		response, err = mgr.handleWrite(data)
 	default:
 		err = errors.New("unrecognized header byte")
 	}
 
+	return
+}
+
+func (mgr *SessionManager) handleDataMessage(msg []byte) (response []byte, err error) {
+	response, err = mgr.handleWrite(msg)
 	return
 }

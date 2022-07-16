@@ -8,9 +8,14 @@ import (
 )
 
 const (
-	REQ_HEADER_SESSION_OPEN  = iota
-	REQ_HEADER_SESSION_POLL  = iota
-	REQ_HEADER_SESSION_WRITE = iota
+	REQ_HEADER_CTRL = iota // encrypted message
+	REQ_HEADER_DATA = iota // normal data flow
+)
+
+const (
+	CTRL_HEADER_SESSION_OPEN  = iota
+	CTRL_HEADER_SESSION_POLL  = iota
+	CTRL_HEADER_SESSION_WRITE = iota
 )
 
 const (
@@ -50,7 +55,7 @@ func UnmarshalSessionOpenRequest(msg []byte) SessionOpenRequest {
 
 func (r SessionOpenRequest) Marshal() []byte {
 	var buff bytes.Buffer
-	buff.WriteByte(REQ_HEADER_SESSION_OPEN)
+	buff.WriteByte(CTRL_HEADER_SESSION_OPEN)
 	buff.WriteString(r.DestAddr)
 	return buff.Bytes()
 }
@@ -72,7 +77,7 @@ func UnmarshalSessionOpenResponse(msg []byte) (SessionOpenResponse, error) {
 
 func (r SessionOpenResponse) Marshal() []byte {
 	var buff bytes.Buffer
-	buff.WriteByte(REQ_HEADER_SESSION_OPEN)
+	buff.WriteByte(CTRL_HEADER_SESSION_OPEN)
 	buff.Write(fixedSizeMarshal(r))
 	return buff.Bytes()
 }
@@ -88,7 +93,7 @@ func UnmarshalPollRequest(msg []byte) (PollRequest, error) {
 
 func (r PollRequest) Marshal() []byte {
 	var buff bytes.Buffer
-	buff.WriteByte(REQ_HEADER_SESSION_POLL)
+	buff.WriteByte(CTRL_HEADER_SESSION_POLL)
 	buff.Write(fixedSizeMarshal(r))
 	return buff.Bytes()
 }
@@ -149,11 +154,12 @@ func UnmarshalWriteRequest(msg []byte) (req WriteRequest, err error) {
 }
 
 func (r WriteRequest) Marshal() []byte {
-	buff := make([]byte, 1+8+2+len(r.Data))
-	buff[0] = REQ_HEADER_SESSION_WRITE
-	binary.BigEndian.PutUint64(buff[1:9], r.ID)
-	binary.BigEndian.PutUint16(buff[9:11], r.FragmentationHeader.Marshal())
-	copy(buff[11:], r.Data)
+	buff := make([]byte, 8+2+len(r.Data))
+	// todo: rejig how i do some things
+	// so that this isn't a ctrl header session
+	binary.BigEndian.PutUint64(buff[0:8], r.ID)
+	binary.BigEndian.PutUint16(buff[8:10], r.FragmentationHeader.Marshal())
+	copy(buff[10:], r.Data)
 
 	return buff
 }

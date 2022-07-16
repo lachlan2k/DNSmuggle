@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/lachlan2k/dns-tunnel/internal/request"
+	"github.com/miekg/dns"
 )
 
 type Config struct {
@@ -24,7 +25,7 @@ type Client struct {
 func NewFromConfig(config Config) Client {
 	return Client{
 		config:      config,
-		requestSize: request.GetMaxRequestSize(config.TunnelDomain),
+		requestSize: request.GetMaxRequestSize(dns.Fqdn(config.TunnelDomain)),
 	}
 }
 
@@ -39,7 +40,7 @@ func (c *Client) Run() error {
 		return err
 	}
 
-	log.Printf("Listening on %v\n", c.config.ListenAddr)
+	log.Printf("Listening on %v. Chunk size %d for domain %s\n", c.config.ListenAddr, c.requestSize, c.config.TunnelDomain)
 
 	table := NATManager{
 		client: c,

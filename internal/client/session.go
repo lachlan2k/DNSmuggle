@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -80,7 +81,7 @@ func (sess *TunnelClientSession) writeRoutine() {
 
 			log.Printf("Writing %d->%d: %v", id, i, req)
 
-			sess.sendControlChannelMessage(req.Marshal())
+			sess.sendDataMessage(req.Marshal())
 		}
 
 		// log.Printf("Writing datagram %s", datagram)
@@ -130,16 +131,24 @@ func (sess *TunnelClientSession) readRoutine() {
 	}
 }
 
-func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response string, err error) {
-	encryptedMsg, err := request.EncryptMessage(msg, sess.client.config.PSK)
+func (sess *TunnelClientSession) sendMessage(msg []byte, controlChannel bool) (response string, err error) {
+	var msgBuff bytes.Buffer
 
-	if err != nil {
-		return
+	if controlChannel {
+		msgBuff.WriteByte(request.REQ_HEADER_CTRL)
+		encryptedMsg, err := request.EncryptMessage(msg, sess.client.config.PSK)
+		if err != nil {
+			return "", err
+		}
+		msgBuff.Write(encryptedMsg)
+	} else {
+		msgBuff.WriteByte(request.REQ_HEADER_DATA)
+		msgBuff.Write(msg)
 	}
 
-	encodedMsg := request.EncodeRequest(encryptedMsg)
+	encodedMsg := request.EncodeRequest(msgBuff.Bytes())
 
-	fqdn := dns.Fqdn(encodedMsg + "." + request.GetCtrlFQDN(sess.client.config.TunnelDomain))
+	fqdn := dns.Fqdn(encodedMsg + "." + sess.client.config.TunnelDomain)
 	log.Printf("Sending %d byte fqdn: %s", len(fqdn), fqdn)
 
 	dnsMsg := new(dns.Msg)
@@ -175,6 +184,14 @@ func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response
 
 	response = txtResponse.Txt[0]
 	return
+}
+
+func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response string, err error) {
+	return sess.sendMessage(msg, true)
+}
+
+func (sess *TunnelClientSession) sendDataMessage(msg []byte) (response string, err error) {
+	return sess.sendMessage(msg, false)
 }
 
 func (sess *TunnelClientSession) initialise() (err error) {
