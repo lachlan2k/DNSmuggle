@@ -1,8 +1,9 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"log"
-	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -21,8 +22,11 @@ type Session struct {
 }
 
 func createAndDialSession(dialAddr *net.UDPAddr) (sess *Session, err error) {
+	var idb [8]byte
+	rand.Read(idb[:])
+
 	sess = &Session{
-		id:        rand.Uint64(),
+		id:        binary.BigEndian.Uint64(idb[:]),
 		fragTable: fragmentation.NewFragTable(),
 	}
 
