@@ -7,32 +7,34 @@ const (
 	REQ_HEADER_SESSION_CLOSE = iota
 )
 
-// const (
-// 	RES_HEADER_WRITE_OK   = iota
-// 	RES_HEADER_POLL_OK    = iota
-// 	RES_HEADER_CLOSED     = iota
-// 	RES_HEADER_DIAL_ERROR = iota
-// )
-
 type SessionID = uint64
 
-// type SessionOpenRequest struct {
-// 	DestAddr string
-// }
+const (
+	MAX_FRAG_INDEX = 0b1111
+	MAX_FRAG_ID    = 0b11111111111
+)
 
-// type SessionOpenResponse struct {
-// 	ID SessionID
-// }
+type ParsedFragmentationHeader struct {
+	ID              uint16
+	Index           uint8
+	IsFinalFragment bool
+}
 
-// type PollRequest struct {
-// 	ID SessionID
-// }
+func (s *ParsedFragmentationHeader) Pack() uint16 {
+	final := uint16(0)
+	if s.IsFinalFragment {
+		final = 1
+	}
 
-// type SessionCloseRequest struct {
-// 	ID SessionID
-// }
+	index := uint16(s.Index & MAX_FRAG_INDEX)
+	id := s.ID & MAX_FRAG_ID
 
-// type WriteRequest struct {
-// 	ID   SessionID
-// 	Data []byte
-// }
+	return index<<5 | id<<9 | final
+}
+
+func ParseFragmentationHeader(header uint16) (out ParsedFragmentationHeader) {
+	out.ID = header >> 9
+	out.Index = uint8((header >> 5) & MAX_FRAG_INDEX)
+	out.IsFinalFragment = (header & 1) == 1
+	return
+}
