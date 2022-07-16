@@ -75,8 +75,6 @@ func (s *Server) handleQuery(m *dns.Msg) {
 
 				responseBytes, err := s.manager.handleMessage(decryptedMessage)
 
-				// log.Printf("Hello %s", responseBytes)
-
 				if err != nil {
 					log.Printf("Handling error for %s: %v", msg, err)
 					rr, _ := dns.NewRR(fmt.Sprintf("%s TXT sad", q.Name))

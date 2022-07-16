@@ -2,11 +2,15 @@ package client
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
+	"sync"
 	"time"
 
+	"github.com/lachlan2k/dns-tunnel/internal/fragmentation"
 	"github.com/lachlan2k/dns-tunnel/internal/request"
 	"github.com/miekg/dns"
 )
@@ -16,6 +20,8 @@ type TunnelClientSession struct {
 	client    *Client
 	connAddr  *net.UDPAddr
 	writeFeed chan []byte
+	fragId    uint16     // TODO: use a pool instead of a counter
+	idLock    sync.Mutex // doing some logic to reset it, so atomic operations aren't enough :()
 }
 
 func newSession(client *Client, conAddr *net.UDPAddr) *TunnelClientSession {
@@ -23,6 +29,7 @@ func newSession(client *Client, conAddr *net.UDPAddr) *TunnelClientSession {
 		client:    client,
 		connAddr:  conAddr,
 		writeFeed: make(chan []byte),
+		fragId:    0,
 	}
 }
 
@@ -36,28 +43,61 @@ func (sess *TunnelClientSession) writeRoutine() {
 	for {
 		datagram := <-sess.writeFeed
 
-		log.Printf("Writing datagram %s", datagram)
+		fragmentCount := uint8(math.Ceil(float64(len(datagram)) / float64(sess.client.requestSize)))
+		log.Printf("Going to send datagram with %d fragments: %s", fragmentCount, datagram)
 
-		msg := request.MarshalMessageWithHeader(request.REQ_HEADER_SESSION_WRITE, request.WriteRequest{
-			Id:   sess.id,
-			Data: datagram,
-		})
+		// TODO: use some sort of "pool" instead of a counter
+		sess.idLock.Lock()
+		id := sess.fragId
+		sess.fragId++
 
-		sess.sendControlChannelMessage(msg)
+		if sess.fragId > request.MAX_FRAG_ID {
+			sess.fragId = 0
+		}
+		sess.idLock.Unlock()
+
+		for i := uint8(0); i < fragmentCount; i++ {
+			header := fragmentation.FragmentationHeader{
+				Index:           i,
+				ID:              id,
+				IsFinalFragment: (i + 1) == fragmentCount,
+			}
+
+			start := sess.client.requestSize * int(i)
+			end := sess.client.requestSize * int(i+1)
+
+			if end > len(datagram) {
+				end = len(datagram)
+			}
+
+			chunk := datagram[start:end]
+
+			req := request.WriteRequest{
+				ID:                  sess.id,
+				Data:                chunk,
+				FragmentationHeader: header,
+			}
+
+			log.Printf("Writing %d->%d: %v", id, i, req)
+
+			sess.sendControlChannelMessage(req.Marshal())
+		}
+
+		// log.Printf("Writing datagram %s", datagram)
 	}
 }
 
 func (sess *TunnelClientSession) readRoutine() {
 	sleep := func() {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(4000 * time.Millisecond)
 	}
 
 	for {
-		pollMsg := request.MarshalMessage(request.REQ_HEADER_SESSION_POLL, request.SessionPollRequest{
+		req := request.PollRequest{
 			ID: sess.id,
-		})
+		}
 
-		encodedResponse, err := sess.sendControlChannelMessage(pollMsg)
+		encodedResponse, err := sess.sendControlChannelMessage(req.Marshal())
 
 		if err != nil {
 			sleep()
@@ -138,13 +178,11 @@ func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response
 }
 
 func (sess *TunnelClientSession) initialise() (err error) {
-	packet := request.MarshalMessage(request.REQ_HEADER_SESSION_OPEN, request.SessionOpenRequest{
+	req := request.SessionOpenRequest{
 		DestAddr: sess.client.config.DialAddr,
-	})
+	}
 
-	log.Printf("Sending %d bytes: %d and %s", len(packet), packet[0], packet[1:])
-
-	encodedResponse, err := sess.sendControlChannelMessage(packet)
+	encodedResponse, err := sess.sendControlChannelMessage(req.Marshal())
 	if err != nil {
 		return
 	}
@@ -154,19 +192,24 @@ func (sess *TunnelClientSession) initialise() (err error) {
 		return
 	}
 
+	header := responseBytes[0]
+	if header == request.SESSION_OPEN_DIAL_FAIL {
+		err = errors.New("dial failed on server-side")
+		return
+	}
+
+	responseBody := responseBytes[1:]
 	// todo: responseBytes[0] check if dial error or okay
 
 	log.Printf("Hello our response bytes do be %s", hex.EncodeToString(responseBytes))
 
-	// var boi request.SessionOpenRequest
-	// proto.
+	response, err := request.UnmarshalSessionOpenResponse(responseBody)
 
-	response, err := request.UnmarshalMessage[request.SessionOpenResponse](responseBytes)
 	if err != nil {
 		return
 	}
 
-	sess.id = response.GetId()
+	sess.id = response.ID
 	log.Printf("Session initialized with ID %d", sess.id)
 
 	return

@@ -16,13 +16,15 @@ type Config struct {
 }
 
 type Client struct {
-	config Config
-	conn   *net.UDPConn
+	config      Config
+	conn        *net.UDPConn
+	requestSize int
 }
 
 func NewFromConfig(config Config) Client {
 	return Client{
-		config: config,
+		config:      config,
+		requestSize: request.GetMaxRequestSize(config.TunnelDomain),
 	}
 }
 
@@ -37,16 +39,14 @@ func (c *Client) Run() error {
 		return err
 	}
 
-	requestSize := request.GetMaxRequestSize(c.config.TunnelDomain)
-
-	log.Printf("Listening on %v (max datagram size %d)\n", c.config.ListenAddr, requestSize)
+	log.Printf("Listening on %v\n", c.config.ListenAddr)
 
 	table := NATManager{
 		client: c,
 	}
 
 	for {
-		buff := make([]byte, requestSize)
+		buff := make([]byte, 65535)
 		n, addr, err := c.conn.ReadFromUDP(buff)
 
 		if err != nil {

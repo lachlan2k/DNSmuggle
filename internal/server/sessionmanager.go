@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"log"
 	"net"
 
@@ -23,12 +24,8 @@ func (mgr *SessionManager) storeSession(sess *Session) {
 func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 	log.Printf("Received new session request\n")
 
-	req, err := request.UnmarshalMessage[request.SessionOpenRequest](msg)
-	if err != nil {
-		return
-	}
-
-	dialAddr, err := net.ResolveUDPAddr("udp", req.GetDestAddr())
+	req := request.UnmarshalSessionOpenRequest(msg)
+	dialAddr, err := net.ResolveUDPAddr("udp", req.DestAddr)
 	if err != nil {
 		return
 	}
@@ -39,26 +36,33 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 	if err != nil {
 		log.Printf("Unable to dial %s: %v", req.DestAddr, err)
 		err = nil
-		response = request.MarshalMessage(request.RES_HEADER_DIAL_ERROR, nil)
+		reply := request.SessionOpenResponse{
+			Status: request.SESSION_OPEN_DIAL_FAIL,
+		}
+		response = reply.Marshal()
 		return
+	} else {
+		log.Printf("Opened session %d to %s", sess.id, dialAddr)
 	}
 
 	mgr.storeSession(sess)
 
-	response = request.MarshalMessage(request.RES_HEADER_POLL_OK, request.SessionOpenResponse{
-		ID: sess.id,
-	})
+	reply := request.SessionOpenResponse{
+		Status: request.SESSION_OPEN_OK,
+		ID:     sess.id,
+	}
+	response = reply.Marshal()
 
 	return
 }
 
 func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.PollRequest](msg)
+	req, err := request.UnmarshalPollRequest(msg)
 	if err != nil {
 		return
 	}
 
-	sess, ok := mgr.getSession(req.GetId())
+	sess, ok := mgr.getSession(req.ID)
 
 	if !ok {
 		response = []byte{request.RES_HEADER_CLOSED}
@@ -70,21 +74,21 @@ func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
 }
 
 func (mgr *SessionManager) handleWrite(msg []byte) (response []byte, err error) {
-	req, err := request.UnmarshalMessage[request.WriteRequest](msg)
+	req, err := request.UnmarshalWriteRequest(msg)
 	if err != nil {
 		return
 	}
 
-	log.Printf("Write request received for %d\n", req.GetId())
+	log.Printf("Write request received for %d: %s\n", req.ID, req.Data)
 
-	sess, ok := mgr.getSession(req.GetId())
+	sess, ok := mgr.getSession(req.ID)
 
 	if !ok {
 		response = []byte{request.RES_HEADER_CLOSED}
 		return
 	}
 
-	response = sess.Write(req.Data)
+	response = sess.Write(req)
 	return
 }
 
@@ -101,8 +105,8 @@ func (mgr *SessionManager) handleMessage(msg []byte) (response []byte, err error
 		response, err = mgr.handlePoll(data)
 	case request.REQ_HEADER_SESSION_WRITE:
 		response, err = mgr.handleWrite(data)
-		// case request.REQ_HEADER_SESSION_CLOSE:
-		// 	response, err = mgr.handleClose(data)
+	default:
+		err = errors.New("unrecognized header byte")
 	}
 
 	return

@@ -1,11 +1,7 @@
 package request
 
 import (
-	"bytes"
-	"log"
-
 	"github.com/miekg/dns"
-	"google.golang.org/protobuf/proto"
 )
 
 func GetCtrlFQDN(domain string) string {
@@ -14,7 +10,7 @@ func GetCtrlFQDN(domain string) string {
 
 // TODO:
 func GetMaxRequestSize(domain string) int {
-	return 100
+	return 90
 }
 
 func GetMaxResponseSize() int {
@@ -22,37 +18,37 @@ func GetMaxResponseSize() int {
 }
 
 // Need this per https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#pointer-method-example
-type Marshalable[T any] interface {
-	proto.Message
-	*T
-}
+// type Marshalable[T any] interface {
+// 	proto.Message
+// 	*T
+// }
 
-func MarshalMessage[T any, PT Marshalable[T]](msg T) []byte {
-	data, err := proto.Marshal(PT(&msg))
+// func MarshalMessage[T any, PT Marshalable[T]](msg T) []byte {
+// 	data, err := proto.Marshal(PT(&msg))
 
-	if err != nil {
-		log.Printf("!!!! Error marshalling message: %v", err)
-	}
+// 	if err != nil {
+// 		log.Printf("!!!! Error marshalling message: %v", err)
+// 	}
 
-	return data
-}
+// 	return data
+// }
 
-func MarshalMessageWithHeader[T any, PT Marshalable[T]](header byte, msg T) []byte {
-	var buff bytes.Buffer
-	buff.WriteByte(header)
+// func MarshalMessageWithHeader[T any, PT Marshalable[T]](header byte, msg T) []byte {
+// 	var buff bytes.Buffer
+// 	buff.WriteByte(header)
 
-	data, err := proto.Marshal(PT(&msg))
+// 	data, err := proto.Marshal(PT(&msg))
 
-	if err != nil {
-		log.Printf("!!!! Error marshalling message: %v", err)
-	} else {
-		buff.Write(data)
-	}
+// 	if err != nil {
+// 		log.Printf("!!!! Error marshalling message: %v", err)
+// 	} else {
+// 		buff.Write(data)
+// 	}
 
-	return buff.Bytes()
-}
+// 	return buff.Bytes()
+// }
 
-func UnmarshalMessage[T any, PT Marshalable[T]](msg []byte) (out T, err error) {
-	err = proto.Unmarshal(msg, PT(&out))
-	return
-}
+// func UnmarshalMessage[T any, PT Marshalable[T]](msg []byte) (out T, err error) {
+// 	err = proto.Unmarshal(msg, PT(&out))
+// 	return
+// }
