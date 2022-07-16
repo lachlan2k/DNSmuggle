@@ -56,15 +56,10 @@ func (sess *Session) Poll() []byte {
 	sess.readLock.Unlock()
 
 	if err != nil {
-		return request.MarshalMessage(request.PollResponse{
-			Status: request.PollResponse_CLOSED,
-		})
+		return []byte{request.RES_HEADER_CLOSED}
 	}
 
-	return request.MarshalMessage(request.PollResponse{
-		Status: request.PollResponse_POLL_OK,
-		Data:   buff[:n],
-	})
+	return append([]byte{request.RES_HEADER_POLL_OK}, buff[:n]...)
 }
 
 func (sess *Session) Write(data []byte) []byte {
@@ -72,12 +67,8 @@ func (sess *Session) Write(data []byte) []byte {
 
 	if err != nil {
 		log.Printf("write failed (sess %d): %v", sess.id, err)
-		return request.MarshalMessage(request.WriteResponse{
-			Status: request.WriteResponse_CLOSED,
-		})
+		return []byte{request.RES_HEADER_CLOSED}
 	}
 
-	return request.MarshalMessage(request.WriteResponse{
-		Status: request.WriteResponse_WRITE_OK,
-	})
+	return []byte{request.RES_HEADER_WRITE_OK}
 }

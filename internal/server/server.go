@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -84,8 +83,6 @@ func (s *Server) handleQuery(m *dns.Msg) {
 					m.Answer = append(m.Answer, rr)
 					continue
 				}
-
-				log.Printf("unencoded response: %s", hex.EncodeToString(responseBytes))
 
 				encodedResponse := request.EncodeResponse(responseBytes)
 				rr, _ := dns.NewRR(fmt.Sprintf("%s TXT %s", q.Name, encodedResponse))

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -39,13 +38,10 @@ func (sess *TunnelClientSession) writeRoutine() {
 
 		log.Printf("Writing datagram %s", datagram)
 
-		req, msg, err := request.CreateMessage(request.NewRootWriteRequest)
-		if err != nil {
-			return
-		}
-
-		req.SetId(sess.id)
-		req.SetData(datagram)
+		msg := request.MarshalMessage(request.REQ_HEADER_SESSION_WRITE, request.SessionWriteRequest{
+			ID:   sess.id,
+			Data: datagram,
+		})
 
 		sess.sendControlChannelMessage(msg)
 	}
@@ -57,8 +53,8 @@ func (sess *TunnelClientSession) readRoutine() {
 	}
 
 	for {
-		pollMsg := request.MarshalMessageWithHeader(request.REQ_HEADER_SESSION_POLL, request.PollRequest{
-			Id: sess.id,
+		pollMsg := request.MarshalMessage(request.REQ_HEADER_SESSION_POLL, request.SessionPollRequest{
+			ID: sess.id,
 		})
 
 		encodedResponse, err := sess.sendControlChannelMessage(pollMsg)
@@ -147,7 +143,7 @@ func (sess *TunnelClientSession) sendControlChannelMessage(msg *capnp.Message) (
 }
 
 func (sess *TunnelClientSession) initialise() (err error) {
-	packet := request.MarshalMessageWithHeader(request.REQ_HEADER_SESSION_OPEN, request.SessionOpenRequest{
+	packet := request.MarshalMessage(request.REQ_HEADER_SESSION_OPEN, request.SessionOpenRequest{
 		DestAddr: sess.client.config.DialAddr,
 	})
 
@@ -155,28 +151,22 @@ func (sess *TunnelClientSession) initialise() (err error) {
 
 	encodedResponse, err := sess.sendControlChannelMessage(packet)
 	if err != nil {
-		err = fmt.Errorf("couldn't send open ctrl messge: %v", err)
 		return
 	}
-
-	log.Printf("encoded response: %s", encodedResponse)
 
 	responseBytes, err := request.DecodeResponse(encodedResponse)
 	if err != nil {
-		err = fmt.Errorf("couldn't decode open response: %v", err)
 		return
 	}
+
 	// todo: responseBytes[0] check if dial error or okay
 
-	log.Printf("Hello our response bytes do be %s", hex.EncodeToString(responseBytes))
-
-	response, err := request.UnmarshalMessage(responseBytes, request.ReadRootSessionOpenResponse)
+	response, err := request.UnmarshalMessage[request.SessionOpenResponse](responseBytes[1:])
 	if err != nil {
-		err = fmt.Errorf("couldn't unmarshal open response: %v", err)
 		return
 	}
 
-	sess.id = response.Id()
+	sess.id = response.ID
 	log.Printf("Session initialized with ID %d", sess.id)
 
 	return
