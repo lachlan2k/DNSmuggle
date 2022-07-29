@@ -12,6 +12,7 @@ func main() {
 	listenAddr := flag.String("listenAddr", "127.0.0.1:5432", "Local port to listen on")
 	nameserver := flag.String("nameserver", "ns1.tunnel.local", "NS record to respond with")
 	psk := flag.String("psk", "hunter2", "Pre-shared key for symmetric encryption")
+	pollOnWrite := flag.Bool("pollOnWrite", true, "Whether to automatically poll on write requests too")
 
 	flag.Parse()
 
@@ -20,6 +21,7 @@ func main() {
 		TunnelDomain: *tunnelDomain,
 		Nameserver:   *nameserver,
 		PSK:          *psk,
+		PollOnWrite:  *pollOnWrite,
 	})
 
 	err := s.Run()

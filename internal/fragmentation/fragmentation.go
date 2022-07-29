@@ -63,6 +63,7 @@ func (t *FragmentationTable) FeedFragment(header FragmentationHeader, data []byt
 
 	packet := &t.packets[header.ID]
 	packet.lock.Lock()
+	defer packet.lock.Unlock()
 
 	fragment := &packet.fragments[header.Index]
 
@@ -84,13 +85,10 @@ func (t *FragmentationTable) FeedFragment(header FragmentationHeader, data []byt
 	packet.receivedCount++
 
 	if header.IsFinalFragment {
-		// Index starts at 0, expected count is discrete counting
 		packet.expectedCount = header.Index + 1
-		log.Printf("Got a final fragment, so, we are expecting a total count of %d (we have %d)", packet.expectedCount, packet.receivedCount)
 	}
 
 	if packet.receivedCount == packet.expectedCount {
-		log.Printf("Yay, we got all %d fragments. passing things on", packet.receivedCount)
 		// All fragments received, reconstruct the packet
 		allFragments := packet.fragments[:packet.receivedCount]
 		var buff bytes.Buffer
@@ -100,8 +98,6 @@ func (t *FragmentationTable) FeedFragment(header FragmentationHeader, data []byt
 		completePacket = buff.Bytes()
 		packet.reset()
 	}
-
-	packet.lock.Unlock()
 
 	return
 }

@@ -9,7 +9,8 @@ import (
 )
 
 type SessionManager struct {
-	store map[request.SessionID](*Session)
+	store  map[request.SessionID](*Session)
+	server *Server
 }
 
 func (mgr *SessionManager) getSession(id request.SessionID) (sess *Session, ok bool) {
@@ -32,14 +33,13 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 
 	log.Printf("Request to dial udp://%s", dialAddr)
 
-	sess, err := createAndDialSession(dialAddr)
+	sess, err := createAndDialSession(dialAddr, mgr.server)
 	if err != nil {
 		log.Printf("Unable to dial %s: %v", req.DestAddr, err)
 		err = nil
-		reply := request.SessionOpenResponse{
+		response = request.SessionOpenResponse{
 			Status: request.SESSION_OPEN_DIAL_FAIL,
-		}
-		response = reply.Marshal()
+		}.Marshal()
 		return
 	} else {
 		log.Printf("Opened session %d to %s", sess.id, dialAddr)
@@ -47,11 +47,10 @@ func (mgr *SessionManager) handleOpen(msg []byte) (response []byte, err error) {
 
 	mgr.storeSession(sess)
 
-	reply := request.SessionOpenResponse{
+	response = request.SessionOpenResponse{
 		Status: request.SESSION_OPEN_OK,
 		ID:     sess.id,
-	}
-	response = reply.Marshal()
+	}.Marshal()
 
 	return
 }
@@ -65,7 +64,9 @@ func (mgr *SessionManager) handlePoll(msg []byte) (response []byte, err error) {
 	sess, ok := mgr.getSession(req.ID)
 
 	if !ok {
-		response = []byte{request.RES_HEADER_CLOSED}
+		response = request.PollResponse{
+			Status: request.RES_HEADER_CLOSED,
+		}.Marshal()
 		return
 	}
 
@@ -79,12 +80,11 @@ func (mgr *SessionManager) handleWrite(msg []byte) (response []byte, err error) 
 		return
 	}
 
-	log.Printf("Write request received for %d: %s\n", req.ID, req.Data)
-
 	sess, ok := mgr.getSession(req.ID)
-
 	if !ok {
-		response = []byte{request.RES_HEADER_CLOSED}
+		response = request.PollResponse{
+			Status: request.RES_HEADER_CLOSED,
+		}.Marshal()
 		return
 	}
 

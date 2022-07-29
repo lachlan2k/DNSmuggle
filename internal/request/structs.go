@@ -75,10 +75,7 @@ func UnmarshalSessionOpenResponse(msg []byte) (SessionOpenResponse, error) {
 }
 
 func (r SessionOpenResponse) Marshal() []byte {
-	var buff bytes.Buffer
-	buff.WriteByte(CTRL_HEADER_SESSION_OPEN)
-	buff.Write(fixedSizeMarshal(r))
-	return buff.Bytes()
+	return fixedSizeMarshal(r)
 }
 
 // Request to ask for new data
@@ -99,8 +96,8 @@ func (r PollRequest) Marshal() []byte {
 
 // Header for fragmentation
 const (
-	MAX_FRAG_INDEX = 0b1111
-	MAX_FRAG_ID    = 0b11111111111
+	MAX_FRAG_INDEX = 0b11111
+	MAX_FRAG_ID    = 0b1111111111
 )
 
 type FragmentationHeader struct {
@@ -111,8 +108,8 @@ type FragmentationHeader struct {
 
 func UnmarshalFragmentationHeader(header uint16) FragmentationHeader {
 	return FragmentationHeader{
-		ID:              header >> 9,
-		Index:           uint8((header >> 5) & MAX_FRAG_INDEX),
+		ID:              header >> 6,
+		Index:           uint8((header >> 1) & MAX_FRAG_INDEX),
 		IsFinalFragment: (header & 1) == 1,
 	}
 }
@@ -126,7 +123,7 @@ func (s FragmentationHeader) Marshal() uint16 {
 	index := uint16(s.Index & MAX_FRAG_INDEX)
 	id := s.ID & MAX_FRAG_ID
 
-	return index<<5 | id<<9 | final
+	return id<<6 | index<<1 | final
 }
 
 // Response to polling data
@@ -194,4 +191,20 @@ func (r WriteRequest) Marshal() []byte {
 	copy(buff[10:], r.Data)
 
 	return buff
+}
+
+// Response to writes
+type WriteResponse PollResponse
+
+func UnmarshalWriteResponse(msg []byte) (res WriteResponse, err error) {
+	wRes, err := UnmarshalPollResponse(msg)
+	if err != nil {
+		return
+	}
+	res = WriteResponse(wRes)
+	return
+}
+
+func (r *WriteResponse) Marshal() []byte {
+	return (*PollResponse)(r).Marshal()
 }

@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/lachlan2k/dns-tunnel/internal/fragmentation"
@@ -14,24 +13,25 @@ import (
 )
 
 type Session struct {
+	server       *Server
 	startTime    time.Time
 	lastPollTime time.Time
 	id           request.SessionID
 	conn         *net.UDPConn
-	readLock     sync.Mutex
 	fragTable    fragmentation.FragmentationTable
-	pollChan     chan *request.PollResponse
+	responseChan chan *request.PollResponse
 	fragId       uint16
 }
 
-func createAndDialSession(dialAddr *net.UDPAddr) (sess *Session, err error) {
+func createAndDialSession(dialAddr *net.UDPAddr, server *Server) (sess *Session, err error) {
 	var idb [8]byte
 	rand.Read(idb[:])
 
 	sess = &Session{
-		id:        binary.BigEndian.Uint64(idb[:]),
-		fragTable: fragmentation.NewFragTable(),
-		pollChan:  make(chan *request.PollResponse, 8000),
+		server:       server,
+		id:           binary.BigEndian.Uint64(idb[:]),
+		fragTable:    fragmentation.NewFragTable(),
+		responseChan: make(chan *request.PollResponse),
 	}
 
 	err = sess.Open(dialAddr)
@@ -39,6 +39,8 @@ func createAndDialSession(dialAddr *net.UDPAddr) (sess *Session, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	go sess.feeder()
 
 	return
 }
@@ -56,102 +58,97 @@ func (sess *Session) Open(dialAddr *net.UDPAddr) (err error) {
 	return
 }
 
-func (sess *Session) pollAndChunk() (firstResponse *request.PollResponse, err error) {
-	sess.readLock.Lock()
-	defer sess.readLock.Unlock()
+func (sess *Session) feeder() {
+	buff := make([]byte, 65507)
 
-	buff := make([]byte, 65535)
+	for {
+		n, err := sess.conn.Read(buff)
+		data := make([]byte, n)
+		copy(data, buff[:n])
 
-	sess.conn.SetReadDeadline(time.Now().Add(time.Second))
-	n, err := sess.conn.Read(buff)
-	if err != nil {
-		return
-	}
-
-	chunkSize := request.GetMaxResponseSize()
-	chunkCount := int(math.Ceil(float64(n) / float64(chunkSize)))
-
-	log.Printf("Chunking into %d chunks", chunkCount)
-
-	id := sess.fragId
-	sess.fragId++
-
-	for i := 0; i < chunkCount; i++ {
-		start := chunkSize * i
-		end := chunkSize * (i + 1)
-		if end > n {
-			end = n
+		if err != nil {
+			continue
 		}
 
-		if sess.fragId > request.MAX_FRAG_ID {
-			sess.fragId = 0
-		}
+		chunkSize := request.GetMaxResponseSize()
+		chunkCount := int(math.Ceil(float64(n) / float64(chunkSize)))
 
-		res := &request.PollResponse{
-			Status: request.POLL_OK,
-			FragmentationHeader: request.FragmentationHeader{
-				ID:              id,
-				Index:           uint8(i),
-				IsFinalFragment: i == (chunkCount - 1),
-			},
-			Data: buff[start:end],
-		}
+		id := sess.fragId
+		sess.fragId++
 
-		if i == 0 {
-			firstResponse = res
-		} else {
-			go func() {
-				sess.pollChan <- res
-			}()
+		for i := 0; i < chunkCount; i++ {
+			start := chunkSize * i
+			end := chunkSize * (i + 1)
+			if end > n {
+				end = n
+			}
+
+			if sess.fragId > request.MAX_FRAG_ID {
+				sess.fragId = 0
+			}
+
+			res := &request.PollResponse{
+				Status: request.POLL_OK,
+				FragmentationHeader: request.FragmentationHeader{
+					ID:              id,
+					Index:           uint8(i),
+					IsFinalFragment: i == (chunkCount - 1),
+				},
+				Data: data[start:end],
+			}
+
+			sess.responseChan <- res
 		}
 	}
-
-	return
 }
 
 func (sess *Session) Poll() []byte {
 	sess.lastPollTime = time.Now()
 
 	var res *request.PollResponse
-	var err error
 
 	select {
-	case res = <-sess.pollChan:
-	default:
-		res, err = sess.pollAndChunk()
-	}
-
-	if err != nil {
-		// todo: handle timeout errros
-		// handle situations where the connection has closed
-		// handle general error
+	case <-time.After(100 * time.Millisecond):
 		res = &request.PollResponse{
 			Status: request.POLL_NO_DATA,
 		}
+	case res = <-sess.responseChan:
 	}
-
-	log.Printf("sending poll response (%d bytes): %v", len(res.Marshal()), *res)
 
 	return res.Marshal()
 }
 
 func (sess *Session) Write(req request.WriteRequest) []byte {
-	log.Printf("Ingesting fragment for session %d: %v", sess.id, req)
+	sess.lastPollTime = time.Now()
+	// log.Printf("Ingesting fragment for session %d: %v", sess.id, req)
 
 	completePacket, err := sess.fragTable.FeedFragment(req.FragmentationHeader, req.Data)
 	if err != nil {
 		log.Printf("Error feeding packet fragment: %v", err)
-		return []byte{request.RES_HEADER_WRITE_OK}
+		res := request.WriteResponse{
+			Status: request.POLL_ERROR,
+		}
+		return res.Marshal()
 	}
 
 	if completePacket != nil {
-		log.Printf("reconstructed complete packet: %v", completePacket)
+		// log.Printf("reconstructed complete packet: %v", completePacket)
 		_, err := sess.conn.Write(completePacket)
 		if err != nil {
 			log.Printf("write failed (sess %d): %v", sess.id, err)
-			return []byte{request.RES_HEADER_CLOSED}
+			res := request.WriteResponse{
+				Status: request.POLL_ERROR,
+			}
+			return res.Marshal()
 		}
 	}
 
-	return []byte{request.RES_HEADER_WRITE_OK}
+	if sess.server.config.PollOnWrite {
+		return sess.Poll()
+	}
+
+	res := request.WriteResponse{
+		Status: request.POLL_NO_DATA,
+	}
+	return res.Marshal()
 }

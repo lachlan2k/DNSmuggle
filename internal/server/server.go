@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +15,7 @@ type Config struct {
 	TunnelDomain string
 	Nameserver   string
 	PSK          string
+	PollOnWrite  bool
 }
 
 type Server struct {
@@ -23,13 +23,15 @@ type Server struct {
 	manager SessionManager
 }
 
-func NewFromConfig(config Config) Server {
-	return Server{
+func NewFromConfig(config Config) (server *Server) {
+	server = &Server{
 		config: config,
 		manager: SessionManager{
 			store: make(map[uint64](*Session)),
 		},
 	}
+	server.manager.server = server
+	return
 }
 
 func (s *Server) handleQuery(m *dns.Msg) {
@@ -74,7 +76,7 @@ func (s *Server) handleQuery(m *dns.Msg) {
 
 				responseBytes, err = s.manager.handleControlMessage(msgBody)
 			case request.REQ_HEADER_DATA:
-				log.Printf("Handling data message %s as %s as %s", msg, hex.EncodeToString(msgBytes), msgBody)
+				// log.Printf("Handling data message %s as %s as %s", msg, hex.EncodeToString(msgBytes), msgBody)
 				responseBytes, err = s.manager.handleDataMessage(msgBody)
 			}
 
@@ -89,7 +91,7 @@ func (s *Server) handleQuery(m *dns.Msg) {
 			rr, _ := dns.NewRR(fmt.Sprintf("%s TXT %s", q.Name, encodedResponse))
 			m.Answer = append(m.Answer, rr)
 
-			fmt.Printf("ans: %s\n", m.Answer)
+			// fmt.Printf("ans: %s\n", m.Answer)
 		}
 	}
 }

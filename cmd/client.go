@@ -13,6 +13,7 @@ func main() {
 	dialAddr := flag.String("dialAddr", "127.0.0.1:51820", "Remote address to dial")
 	resolver := flag.String("resolver", "8.8.8.8", "DNS resolver to use")
 	psk := flag.String("psk", "hunter2", "Pre-shared key for symmetric encryption")
+	threads := flag.Int("threads", 10, "How many reader/writer threads to use")
 
 	flag.Parse()
 
@@ -22,6 +23,7 @@ func main() {
 		TunnelDomain: *tunnelDomain,
 		Resolver:     *resolver,
 		PSK:          *psk,
+		Threads:      *threads,
 	})
 
 	err := c.Run()

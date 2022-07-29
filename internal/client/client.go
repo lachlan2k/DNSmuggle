@@ -14,6 +14,7 @@ type Config struct {
 	TunnelDomain string
 	Resolver     string
 	PSK          string
+	Threads      int
 }
 
 type Client struct {
@@ -46,8 +47,9 @@ func (c *Client) Run() error {
 		client: c,
 	}
 
+	buff := make([]byte, 65507)
+
 	for {
-		buff := make([]byte, 65535)
 		n, addr, err := c.conn.ReadFromUDP(buff)
 
 		if err != nil {
@@ -55,12 +57,13 @@ func (c *Client) Run() error {
 			continue
 		}
 
-		data := buff[:n]
+		data := make([]byte, n)
+		copy(data, buff[:n])
 		// log.Printf("Read %s (%d bytes) from %v", data, n, addr)
 
-		go (func() {
+		go func() {
 			sess := table.UpsertSession(addr)
 			sess.Write(data)
-		})()
+		}()
 	}
 }
