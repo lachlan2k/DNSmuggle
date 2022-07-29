@@ -2,9 +2,9 @@
 
 A tool to tunnel UDP datagrams over DNS.
 This is most useful when coupled with something like Wireguard, to tunnel your internet traffic in a nice and lightweight fashion.
+Use this to bypass firewalls, such as hotspot paywalls and air-gapped networks, so long as you can resolve public DNS.
 
 Features:
-* Bypass firewalls, such as hotspot paywalls and air-gapped networks, so long as you can resolve public DNS.
 * Datagram fragmentation and re-assembly to support large datagrams.
 * Avoids caching issues.
 * Bypasses basic mitigations, such as case-mixing.
