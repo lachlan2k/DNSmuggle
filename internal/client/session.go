@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -237,7 +238,12 @@ func (sess *TunnelClientSession) sendMessage(msg []byte, controlChannel bool) (r
 }
 
 func (sess *TunnelClientSession) sendControlChannelMessage(msg []byte) (response string, err error) {
-	return sess.sendMessage(msg, true)
+	dataToSend := make([]byte, 8+len(msg))
+	timestamp := time.Now().UnixMilli()
+	binary.BigEndian.PutUint64(dataToSend[0:8], uint64(timestamp))
+	copy(dataToSend[8:], msg)
+
+	return sess.sendMessage(dataToSend, true)
 }
 
 func (sess *TunnelClientSession) sendDataMessage(msg []byte) (response string, err error) {

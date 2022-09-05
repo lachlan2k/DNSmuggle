@@ -65,7 +65,7 @@ func (s *Server) handleQuery(m *dns.Msg) {
 
 			switch msgHeader {
 			case request.REQ_HEADER_CTRL:
-				msgBody, err = request.DecryptMessage(msgBody, s.config.PSK)
+				decryptedMsgBody, err := request.DecryptMessage(msgBody, s.config.PSK)
 
 				if err != nil {
 					log.Printf("Decryption error for %s: %v", msg, err)
@@ -74,7 +74,7 @@ func (s *Server) handleQuery(m *dns.Msg) {
 					continue
 				}
 
-				responseBytes, err = s.manager.handleControlMessage(msgBody)
+				responseBytes, err = s.manager.handleControlMessage(decryptedMsgBody, msgBody[0:24])
 			case request.REQ_HEADER_DATA:
 				// log.Printf("Handling data message %s as %s as %s", msg, hex.EncodeToString(msgBytes), msgBody)
 				responseBytes, err = s.manager.handleDataMessage(msgBody)
@@ -113,6 +113,7 @@ func (s *Server) Run() (err error) {
 	s.config.TunnelDomain = dns.Fqdn(s.config.TunnelDomain)
 	dns.HandleFunc(s.config.TunnelDomain, s.handleDnsRequest)
 	dnsServer := &dns.Server{Addr: s.config.ListenAddr, Net: "udp"}
+	go s.manager.janitor()
 
 	log.Printf("Starting tunnel server (%s) on %s\n", s.config.TunnelDomain, s.config.ListenAddr)
 	err = dnsServer.ListenAndServe()
