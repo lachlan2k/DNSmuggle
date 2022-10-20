@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
+	"crypto/sha256"
 
 	"github.com/lachlan2k/dns-tunnel/internal/request"
 	"github.com/miekg/dns"
@@ -28,6 +30,7 @@ func NewFromConfig(config Config) (server *Server) {
 		config: config,
 		manager: SessionManager{
 			store: make(map[uint64](*Session)),
+			seenRequestMap: make(map[[sha256.Size]byte](time.Time)),
 		},
 	}
 	server.manager.server = server
